@@ -121,8 +121,8 @@ public class DB2API {
 		JSONArray jsonarr2 = new JSONArray();
 		while (rs.next()) {
 			int assign = 0;
-			JSONObject temp = new JSONObject();
-
+			//JSONObject temp = new JSONObject();
+		LinkedHashMap<String, Object> temp = new LinkedHashMap<String, Object>();
 			for (int i = 1; i <= rscount; i++) {
 				temp.put(String.valueOf(assign), rs.getObject(i));
 				assign++;
@@ -187,9 +187,13 @@ public class DB2API {
 			Document doc2 = records.get(i);
 			Set<String> keys = doc2.keySet();
 			String val ="";
+				 ArrayList<Integer> set=new ArrayList<Integer>();  
+			 for(String s: keys)
+				 set.add(Integer.parseInt(s));
+			Collections.sort(set);
 			//List<String> val = new ArrayList<String>();
-			for(String keyset : keys)
-				val +=doc2.get(keyset)+",";
+			for(int keyset : set)
+				val +=doc2.get(String.valueOf(keyset))+",";
 	
 			 data2 = Arrays.asList(
 				        RowFactory.create(val.split(",")));
