@@ -97,8 +97,9 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 		 while ((line1 = br.readLine()) != null){
 		  	String[] splitrow = line1.split(",");
 		  	int assign = 0;
-		  	JSONObject temp = new JSONObject();
-		  	for (int i : index) {
+		  	//JSONObject temp = new JSONObject();
+		  	LinkedHashMap<String, Object> temp = new LinkedHashMap<String, Object>();
+			 for (int i : index) {
 		  			temp.put(String.valueOf(assign), splitrow[i]);
 		  			assign++;
 		  	 }
@@ -130,8 +131,12 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 					Document doc2 = records.get(i);
 					Set<String> keys = doc2.keySet();
 					String val ="";
-					for(String keyset : keys)
-						val +=doc2.get(keyset)+",";
+					 ArrayList<Integer> set=new ArrayList<Integer>();  
+			 for(String s: keys)
+				 set.add(Integer.parseInt(s));
+			Collections.sort(set);
+			for(int keyset : set)
+				val +=doc2.get(String.valueOf(keyset))+",";
 					 val = val.substring(0, val.length()-1);
 					 data2 = Arrays.asList(
 						        RowFactory.create(val.split(",")));
