@@ -63,8 +63,12 @@ public class DB2API {
 	public static void main(String[] args) throws ClassNotFoundException, SQLException, IOException, JSONException, ParseException, java.text.ParseException {
 		
 	logger.info("Execution Started");
-	ConnectionProcess();
-	//HDFSUpdate.HDFSUpdate();
+	
+	
+		ConnectionProcess();	
+	
+	
+	
 	}
 
 	/**
@@ -95,12 +99,15 @@ public class DB2API {
 		logger.debug("Connection String");	
 		 con = DriverManager.getConnection("jdbc:"+migvariable.dbType+"://"+migvariable.jdbcURL+"/"+migvariable.jdbcSourceDatabasename, migvariable.jdbcUsername,
 				migvariable.jdbcPassword);
-		}else{
+		}else if(migvariable.dbType.toLowerCase().equalsIgnoreCase("hive")){
 			//it direclty goes to the hive
 			String hiveallurl = migvariable.hiveMetastoreURI.split("//")[1];
 			String hiveurl = hiveallurl.split(":")[0];
 			logger.debug("Connection String");
 		 con = DriverManager.getConnection("jdbc:hive2://"+hiveurl+":10000/"+migvariable.jdbcSourceDatabasename,"","");
+		}else{
+			logger.info("No Storage Type has been Specified in Properties File");
+			System.exit(0);
 		}
 
 		String sql = "select * from "+migvariable.jdbcSourceDatabasename+"."+migvariable.jdbcSourceTablename; //limit 10";
@@ -134,13 +141,16 @@ public class DB2API {
 		json.put("aid", migvariable.aid);
 		json.put("tid", "0");
 		logger.debug(json);
-		APICall();
+		APICall(json);
 		}else{
 			
+			//if(Migrationvar.ACIDtype.equalsIgnoreCase("update")){
+				//HDFSUpdate.HDFS();
+			//}else{
 			//it goes to the text file 
 			Txt2API txtapi = new Txt2API();
 			txtapi.textfilesrc();
-			
+			//}
 		}
 		
 
@@ -151,10 +161,10 @@ public class DB2API {
 	 * writting it into the spark dataset.
 	 * 	
 	 */
-	public static void APICall(){
+	public static void APICall(JSONObject jsoninput){
 		JSONObject jsonout=null;
 		try{
-			jsonout = readJsonFromUrl("http://"+Migrationvar.apiIP+":45670/path7", json);
+			jsonout = readJsonFromUrl("http://"+Migrationvar.apiIP+":45670/path7", jsoninput);
 			logger.debug(jsonout); 
 		}catch(IOException | java.text.ParseException e){
 			e.printStackTrace();
@@ -193,13 +203,28 @@ public class DB2API {
 
 		StructType schema = createSchema(columnames);
 			        sentenceDataFrame2 = Migrationvar.sparkses.createDataFrame(arrfulldata, schema);
-			        
+			        if(Migrationvar.ACIDtype.equalsIgnoreCase("wholemigration") && Migrationvar.storageType.equalsIgnoreCase("db") && Migrationvar.dbType.equalsIgnoreCase("hive")){
    			        Spark2Hive rdf =new Spark2Hive();
 			        try {
 						rdf.hadoop(sentenceDataFrame2);
 					} catch (ClassNotFoundException | IOException | SQLException e) {
 						e.printStackTrace();
 					}
+			        }else if(Migrationvar.ACIDtype.equalsIgnoreCase("insert") && Migrationvar.storageType.equalsIgnoreCase("text") && Migrationvar.dbType.equalsIgnoreCase("text")){
+			            Spark2Hive rdf =new Spark2Hive();
+				        try {
+							rdf.hadoop(sentenceDataFrame2);
+						} catch (ClassNotFoundException | IOException | SQLException e) {
+							e.printStackTrace();
+						}
+			        }else if(Migrationvar.ACIDtype.equalsIgnoreCase("update") && Migrationvar.storageType.equalsIgnoreCase("text") && Migrationvar.dbType.equalsIgnoreCase("text")){
+			        	try {
+							HDFSUpdate.HDFSUpdating(sentenceDataFrame2);
+						} catch (ClassNotFoundException | JSONException | IOException | java.text.ParseException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+			        }
 	}
 	/**
 	 * This method calls the API and returns the JSONObject as output. 
