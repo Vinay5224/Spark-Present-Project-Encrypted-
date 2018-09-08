@@ -2,50 +2,42 @@ package com.exf.apicall;
 
 
 import java.io.BufferedReader;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.Charset;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import org.apache.log4j.Logger;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.bson.Document;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.json.JSONException;
 import org.json.simple.JSONArray;
-import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
-import com.exf.Utils.*;
 
+import com.exf.HdfsUpdate.HDFSUpdate;
+import com.exf.Utils.*;
 import com.exf.spark.*;
-import com.github.wnameless.json.flattener.JsonFlattener;
+
 /**
 * The DB2API class will checks the dbtype from properties file,
 * if it's value is 'DB' then it creates a connection to the database and 
@@ -62,7 +54,7 @@ public class DB2API {
 
 	static PreparedStatement stmt = null;
 	static ResultSet rs = null;
-	static ResultSetMetaData rsmd = null;
+	public static ResultSetMetaData rsmd = null;
 	static JSONObject json = new JSONObject();
 	static JSONArray jsonarray = new JSONArray();
 	static Map<String, Object> flattenJson;
@@ -72,7 +64,7 @@ public class DB2API {
 		
 	logger.info("Execution Started");
 	ConnectionProcess();
-
+	//HDFSUpdate.HDFSUpdate();
 	}
 
 	/**
@@ -91,7 +83,7 @@ public class DB2API {
 	public static void ConnectionProcess() throws ClassNotFoundException, IOException, JSONException, ParseException, java.text.ParseException, NullPointerException, SQLException {
 	Migrationvar migvariable = new Migrationvar();
 	migvariable.loadProp();
-		if(migvariable.storageType.toLowerCase().equalsIgnoreCase("db")){
+		if(Migrationvar.storageType.toLowerCase().equalsIgnoreCase("db")){
 		Class.forName("com.mysql.jdbc.Driver");
 		Class.forName("org.apache.hive.jdbc.HiveDriver");
 		Connection con=null;
@@ -110,10 +102,8 @@ public class DB2API {
 			logger.debug("Connection String");
 		 con = DriverManager.getConnection("jdbc:hive2://"+hiveurl+":10000/"+migvariable.jdbcSourceDatabasename,"","");
 		}
-		
-		if(migvariable.encryptColNames.endsWith(","))
-			migvariable.encryptColNames = migvariable.encryptColNames.substring(0, migvariable.encryptColNames.length()-1);
-		String sql = "select "+migvariable.encryptColNames+" from "+migvariable.jdbcSourceDatabasename+"."+migvariable.jdbcSourceTablename; //limit 10";
+
+		String sql = "select * from "+migvariable.jdbcSourceDatabasename+"."+migvariable.jdbcSourceTablename; //limit 10";
 		stmt = con.prepareStatement(sql);
 		rs = stmt.executeQuery();
 		rsmd = rs.getMetaData();
@@ -121,8 +111,8 @@ public class DB2API {
 		JSONArray jsonarr2 = new JSONArray();
 		while (rs.next()) {
 			int assign = 0;
-			JSONObject temp = new JSONObject();
-
+			//JSONObject temp = new JSONObject();
+			LinkedHashMap<String, Object> temp = new LinkedHashMap<String, Object>();
 			for (int i = 1; i <= rscount; i++) {
 				temp.put(String.valueOf(assign), rs.getObject(i));
 				assign++;
@@ -134,7 +124,8 @@ public class DB2API {
 		}
 		for (int j = 1; j <= rscount; j++) {
 			JSONObject temp1 = new JSONObject();
-			temp1.put("name", rsmd.getColumnName(j));
+			//Here column names are splitting with table name
+			temp1.put("name", rsmd.getColumnName(j).split("\\.")[1]);
 			temp1.put("tablename", migvariable.migrationTablename);
 			jsonarr2.add(temp1);
 		}
@@ -164,7 +155,7 @@ public class DB2API {
 		JSONObject jsonout=null;
 		try{
 			jsonout = readJsonFromUrl("http://"+Migrationvar.apiIP+":45670/path7", json);
-		logger.debug(jsonout); 
+			logger.debug(jsonout); 
 		}catch(IOException | java.text.ParseException e){
 			e.printStackTrace();
 		}
@@ -187,9 +178,12 @@ public class DB2API {
 			Document doc2 = records.get(i);
 			Set<String> keys = doc2.keySet();
 			String val ="";
-			//List<String> val = new ArrayList<String>();
-			for(String keyset : keys)
-				val +=doc2.get(keyset)+",";
+			 ArrayList<Integer> set=new ArrayList<Integer>();  
+			 for(String s: keys)
+				 set.add(Integer.parseInt(s));
+			Collections.sort(set);
+			for(int keyset : set)
+				val +=doc2.get(String.valueOf(keyset))+",";
 	
 			 data2 = Arrays.asList(
 				        RowFactory.create(val.split(",")));
@@ -199,7 +193,8 @@ public class DB2API {
 
 		StructType schema = createSchema(columnames);
 			        sentenceDataFrame2 = Migrationvar.sparkses.createDataFrame(arrfulldata, schema);
-			        Spark2Hive rdf =new Spark2Hive();
+			        
+   			        Spark2Hive rdf =new Spark2Hive();
 			        try {
 						rdf.hadoop(sentenceDataFrame2);
 					} catch (ClassNotFoundException | IOException | SQLException e) {

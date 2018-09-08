@@ -8,8 +8,10 @@ import java.sql.DriverManager;
 
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -18,8 +20,10 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.functions;
 import org.apache.spark.sql.expressions.Window;
+import org.datanucleus.store.rdbms.query.ResultMetaDataROF;
 
 import com.exf.Utils.Migrationvar;
+import com.exf.apicall.DB2API;
 import com.exf.apicall.Txt2API;
 
 /**
@@ -54,57 +58,28 @@ public class Spark2Hive {
 		Dataset<Row> firstset = null;
 		Logger.getLogger("org").setLevel(Level.OFF);
 		Logger.getLogger("akka").setLevel(Level.OFF);
-		String dbtype = migspark.dbType.toLowerCase();
-		String encryptcolumns = migspark.encryptColNames;
-		if (dbtype.equalsIgnoreCase("mysql")) {
 
-			Properties prop = new Properties();
-			prop.put("user", migspark.jdbcUsername);
-			prop.put("password", migspark.jdbcPassword);
-			firstset = migspark.sparkses.read().jdbc(
-					"jdbc:" + dbtype + "://" + migspark.jdbcURL + "/" + migspark.jdbcSourceDatabasename,
-					migspark.jdbcSourceTablename, prop);
-			String finalkeys = finalcolumns(firstset, encryptcolumns);
-			firstset.createOrReplaceTempView("TEST123");
-			firstset = migspark.sparkses.sql("SELECT " + finalkeys + " FROM TEST123");
-			firstset = firstset.withColumn("id", functions.row_number().over(Window.orderBy(finalkeys.split(",")[0])));
-
-		} else if (dbtype.equalsIgnoreCase("text")) {
-
-			firstset = migspark.sparkses.read().format("com.databricks.spark.csv").option("header", "true")
-					.option("delimiter", ",").load(migspark.textFilepath).na().fill("");
-			String finalkeys = finalcolumns(firstset, encryptcolumns);
-			firstset.createOrReplaceTempView("TEST123");
-			firstset = migspark.sparkses.sql("SELECT " + finalkeys + " FROM TEST123");
-			firstset = firstset.withColumn("id", functions.row_number().over(Window.orderBy(finalkeys.split(",")[0])));
-
-		} else {
-			// hive
-			firstset = migspark.sparkses
-					.sql("SELECT * FROM " + migspark.jdbcSourceDatabasename + "." + migspark.jdbcSourceTablename);
-			String finalkeys = finalcolumns(firstset, encryptcolumns);
-			firstset.createOrReplaceTempView("TEST123");
-			firstset = migspark.sparkses.sql("SELECT " + finalkeys + " FROM TEST123");
-			firstset = firstset.withColumn("id", functions.row_number().over(Window.orderBy(finalkeys.split(",")[0])));
-		}
 
 		Dataset<Row> second = secondset;
-		second = second.withColumn("id", functions.row_number().over(Window.orderBy(encryptcolumns.split(",")[0])));
-
-		Dataset<Row> finalset = firstset.join(second, firstset.col("id").equalTo(second.col("id")), "outer").drop("id");
-		finalset.show();
 
 		// original one
 		hdfstoringpath = migspark.hdfsPath + "/" + migspark.jdbcTargetDatabasename;
-		finalset.write().mode("append").format("com.databricks.spark.csv").option("header", "false").save(hdfstoringpath);
+		second.write().mode("append").format("com.databricks.spark.csv").option("header", "false").save(hdfstoringpath);
 		// .mode("append").csv(hdfstoringpath);
-		String allcolumns[] = finalset.columns();
-		String insertcol = "";
-		for (String s : allcolumns)
-			insertcol += s + " String, ";
-
-		insertcol = insertcol.substring(0, insertcol.length() - 2);
+	
 		if(migspark.storageType.toLowerCase().equalsIgnoreCase("db")){
+			String allcolumns[] = second.columns();
+			String insertcol = "";
+			DB2API db = new DB2API();
+			int columnCount = db.rsmd.getColumnCount();
+			ArrayList<String> colSchema = new ArrayList<String>();
+			for (int i = 1; i <= columnCount; i++)
+				colSchema.add(String.valueOf(db.rsmd.getColumnTypeName(i)));
+				
+			for(int i=0;i<allcolumns.length;i++)	
+				insertcol += allcolumns[i] +" "+colSchema.get(i).toUpperCase()+", ";
+
+			insertcol = insertcol.substring(0, insertcol.length() - 2);
 			Hadoop2hive(insertcol);	
 		}
 		else{
@@ -125,7 +100,9 @@ public class Spark2Hive {
 		Migrationvar mig = new Migrationvar();
 		String path ="'"+mig.hdfsPath+"/"+mig.jdbcTargetDatabasename+"/'";
 		Class.forName("org.apache.hive.jdbc.HiveDriver");
-		Connection con = DriverManager.getConnection("jdbc:hive2://192.168.0.184:10000/"+mig.jdbcTargetDatabasename,"","");
+		String hiveallurl = mig.hiveMetastoreURI.split("//")[1];
+		String hiveurl = hiveallurl.split(":")[0];
+		Connection con = DriverManager.getConnection("jdbc:hive2://"+hiveurl+":10000/"+mig.jdbcTargetDatabasename,"","");
 		logger.info("Connection obtained to hive");
 		//impala		
 		//Connection con = DriverManager.getConnection("jdbc:hive2://192.168.0.184:21050/individual_profile_schema_tar;auth=noSasl","","");
@@ -139,31 +116,7 @@ public class Spark2Hive {
 
 	}
 
-	/**
-	 * What are the encrypted columns will be removed and remaining,
-	 * columns are passed to the query in the dataset.
-	 * 
-	 * @param coldataset
-	 * @param encCol
-	 * @return
-	 */
-	public static String finalcolumns(Dataset<Row> coldataset, String encCol){
-		Dataset<Row> colnames = coldataset;
-		String[] allcolumns = colnames.columns();
-		String[] encol = encCol.split(","); 
-		String finalcolumns = "";
-		HashSet<String> allcol = new HashSet<String>();
-		for(String s : allcolumns)
-			allcol.add(s);
-		for(String s: encol)
-			allcol.remove(s);
-		
-		for(String keys: allcol)
-			finalcolumns+=keys+", ";
-		
-		finalcolumns=finalcolumns.substring(0,finalcolumns.length()-2);
-		return finalcolumns;
-	}
+
 
 }
 

@@ -17,6 +17,8 @@ import java.sql.SQLException;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -63,17 +65,7 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 	public static void textfilesrc() throws IOException, JSONException, ClassNotFoundException, SQLException, ParseException {
 		// TODO Auto-generated method stub
 		Migrationvar migvar = new Migrationvar();
-		if(migvar.encryptColNames.endsWith(","))
-			migvar.encryptColNames = migvar.encryptColNames.substring(0, migvar.encryptColNames.length()-1);
-		String columnames2encrypt = migvar.encryptColNames;
 		JSONArray arrtxt = new JSONArray();
-		String[] splittingcol = columnames2encrypt.split(",");
-		for(int i=0;i<splittingcol.length;i++){
-			JSONObject temp1 = new JSONObject();
-			temp1.put("name", splittingcol[i]);
-			temp1.put("tablename", migvar.migrationTablename);
-			arrtxt.add(temp1);
-		}
 		logger.info("File is Reading from :"+migvar.textFilepath);
 		BufferedReader br = new BufferedReader(new FileReader(new File(migvar.textFilepath)));
 		  // this will read the first line
@@ -83,22 +75,23 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 		 while((line1=br.readLine())!=null){
 			 String[] colsplit =line1.split(",");
 			 for(int i=0;i<colsplit.length;i++){
-				for(int j=0;j<splittingcol.length;j++){
-					if(splittingcol[j].equalsIgnoreCase(colsplit[i])){
-						index.add(i);
-					}
-							
-				}
+
+					JSONObject temp1 = new JSONObject();
+					temp1.put("name", colsplit[i]);
+					temp1.put("tablename", migvar.migrationTablename);
+					arrtxt.add(temp1);
 			 }
 			 break;
 		 }
-	JSONArray jsonrows = new JSONArray();
+		 JSONArray jsonrows = new JSONArray();
 		//Taking particular columns from the text file 
 		 while ((line1 = br.readLine()) != null){
 		  	String[] splitrow = line1.split(",");
 		  	int assign = 0;
-		  	JSONObject temp = new JSONObject();
-		  	for (int i : index) {
+		  	//JSONObject temp = new JSONObject();
+		  	LinkedHashMap<String, Object> temp = new LinkedHashMap<String, Object>();
+		  	//for (int i : index) {
+		  	for(int i=0;i<splitrow.length;i++){
 		  			temp.put(String.valueOf(assign), splitrow[i]);
 		  			assign++;
 		  	 }
@@ -109,7 +102,7 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 		 jsontxtarr.put("COLUMNS", arrtxt);
 		 jsontxtarr.put("aid", migvar.aid);
 		 jsontxtarr.put("tid", "0");
-		 logger.debug(jsontxtarr.toString()+"\n"+index.size());
+		 logger.debug(jsontxtarr.toString());
 		 
 		 DB2API db2 = new DB2API();
 		 JSONObject outputjson = db2.readJsonFromUrl("http://"+migvar.apiIP+":45670/path7", jsontxtarr);
@@ -130,8 +123,12 @@ static Logger logger = Logger.getLogger(Txt2API.class);
 					Document doc2 = records.get(i);
 					Set<String> keys = doc2.keySet();
 					String val ="";
-					for(String keyset : keys)
-						val +=doc2.get(keyset)+",";
+					 ArrayList<Integer> set=new ArrayList<Integer>();  
+					 for(String s: keys)
+						 set.add(Integer.parseInt(s));
+					Collections.sort(set);
+					for(int keyset : set)
+						val +=doc2.get(String.valueOf(keyset))+",";
 					 val = val.substring(0, val.length()-1);
 					 data2 = Arrays.asList(
 						        RowFactory.create(val.split(",")));
